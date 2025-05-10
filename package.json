@@ -1,0 +1,26 @@
+{
+  "name": "cosmos-ethereum-wallet-generator",
+  "version": "1.0.0",
+  "description": "Offline tool to derive both Cosmos and Ethereum addresses from a BIP39 mnemonic",
+  "main": "index.html",
+  "type": "module",
+  "scripts": {
+    "build": "rollup -c",
+    "verify": "npm ci && npm run build && npm run checksum",
+    "checksum": "node -e \"const crypto = require('crypto'); const fs = require('fs'); const files = fs.readdirSync('dist').filter(f => f.endsWith('.js')); files.forEach(f => { const hash = crypto.createHash('sha256').update(fs.readFileSync('dist/' + f)).digest('hex'); console.log(hash + '  dist/' + f); });\" > checksums.txt"
+  },
+  "keywords": ["cosmos", "ethereum", "wallet", "offline", "bech32", "mnemonic", "crypto"],
+  "author": "Your Name",
+  "license": "MIT",
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^28.0.3",
+    "@rollup/plugin-node-resolve": "^16.0.1",
+    "@scure/bip32": "^1.7.0",
+    "@scure/bip39": "^1.6.0",
+    "rollup": "^4.40.2"
+  },
+  "dependencies": {
+    "@noble/hashes": "^1.8.0",
+    "@noble/secp256k1": "^2.2.3"
+  }
+}

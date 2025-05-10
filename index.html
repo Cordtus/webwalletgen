@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Cosmos Wallet Generator (Offline)</title>
+  <style>
+    body { font-family: sans-serif; max-width: 750px; margin: 30px auto; padding: 10px; }
+    textarea, input, button { font-size: 1rem; padding: 8px; margin-bottom: 12px; width: 100%; }
+    .output { background: #f9f9f9; padding: 10px; margin-top: 8px; white-space: pre-wrap; }
+    fieldset { margin-bottom: 20px; }
+    legend { font-weight: bold; }
+  </style>
+  <script src="./dist/bip39.min.js"></script>
+  <script src="./dist/bip32.min.js"></script>
+  <script src="./dist/secp256k1.min.js"></script>
+  <script src="./dist/sha256.min.js"></script>
+  <script src="./dist/ripemd160.min.js"></script>
+  <script src="./dist/keccak.min.js"></script>
+</head>
+<body>
+<h1>Offline Cosmos Wallet Generator</h1>
+<p>Derives Bech32 and EVM-compatible addresses from a mnemonic using Cosmos-style public key hashing (compressed pubkey).</p>
+
+<script>
+const BECH32_ALPHABET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+
+function bech32Polymod(values) {
+  const GENERATORS = [0x3b6a57b2,0x26508e6d,0x1ea119fa,0x3d4233dd,0x2a1462b3];
+  let chk = 1;
+  for (let p = 0; p < values.length; p++) {
+    const top = chk >>> 25;
+    chk = (chk & 0x1ffffff) << 5 ^ values[p];
+    for (let i = 0; i < 5; i++) {
+      if (((top >>> i) & 1) === 1) chk ^= GENERATORS[i];
+    }
+  }
+  return chk;
+}
+
+function bech32HrpExpand(hrp) {
+  const ret = [];
+  for (let i = 0; i < hrp.length; i++) ret.push(hrp.charCodeAt(i) >>> 5);
+  ret.push(0);
+  for (let i = 0; i < hrp.length; i++) ret.push(hrp.charCodeAt(i) & 31);
+  return ret;
+}
+
+function bech32Encode(prefix, data) {
+  const combined = bech32HrpExpand(prefix).concat(data).concat([0,0,0,0,0,0]);
+  const polymod = bech32Polymod(combined) ^ 1;
+  const checksum = [];
+  for (let i = 0; i < 6; i++) checksum.push((polymod >> 5*(5 - i)) & 31);
+  const combinedFinal = data.concat(checksum);
+  return prefix + "1" + combinedFinal.map(i => BECH32_ALPHABET[i]).join('');
+}
+
+function toWords(bytes) {
+  let acc = 0, bits = 0, out = [];
+  for (let i = 0; i < bytes.length; i++) {
+    acc = (acc << 8) | bytes[i];
+    bits += 8;
+    while (bits >= 5) {
+      bits -= 5;
+      out.push((acc >> bits) & 0x1f);
+    }
+  }
+  if (bits > 0) out.push((acc << (5 - bits)) & 0x1f);
+  return out;
+}
+
+function bytesToHex(bytes) {
+  return Array.from(bytes).map(x => x.toString(16).padStart(2, '0')).join('');
+}
+
+function derive() {
+  const out = document.getElementById('result');
+  out.textContent = '';
+
+  const mnemonic = document.getElementById('mnemonic').value.trim();
+  const path = document.getElementById('path').value.trim();
+  const prefix = document.getElementById('prefix').value.trim();
+
+  bip39.mnemonicToSeed(mnemonic).then(seed => {
+    const root = bip32.HDKey.fromMasterSeed(seed);
+    const node = root.derive(path);
+    const privKey = node.privateKey;
+
+    const pubKey = secp256k1.getPublicKey(privKey, true);
+    const pubKeyUncompressed = secp256k1.getPublicKey(privKey, false).slice(1);
+
+    const sha = sha256(pubKey);
+    const raw = ripemd160(sha);
+    const words = toWords(raw);
+    const bech32Addr = bech32Encode(prefix, words);
+
+    const ethHash = keccak256(pubKeyUncompressed);
+    const ethAddr = '0x' + bytesToHex(ethHash.slice(-20));
+
+    out.textContent =
+      `Mnemonic: (hidden)
+` +
+      `Path: ${path}
+
+` +
+      `Private Key: ${bytesToHex(privKey)}
+` +
+      `Public Key: ${bytesToHex(pubKey)}
+
+` +
+      `Bech32 Address: ${bech32Addr}
+` +
+      `Ethereum Address: ${ethAddr}`;
+  }).catch(e => {
+    out.textContent = 'Error: ' + e.message;
+  });
+}
+</script>
+
+<fieldset>
+  <legend>1. Generate Wallet</legend>
+  <label>Mnemonic</label>
+  <textarea id="mnemonic" rows="2" placeholder="Enter 12 or 24-word mnemonic..."></textarea>
+
+  <label>Derivation Path</label>
+  <input id="path" value="m/44'/118'/0'/0/0"/>
+
+  <label>Bech32 Prefix</label>
+  <input id="prefix" value="genesis"/>
+
+  <button onclick="derive()">Derive</button>
+  <div id="result" class="output">No result yet.</div>
+</fieldset>
+</body>
+</html>
